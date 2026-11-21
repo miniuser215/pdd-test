@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Тренажёр знаков ПДД РФ</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app">
+    <header class="header">
+      <h1>Тренажёр знаков ПДД РФ</h1>
+      <p class="subtitle">Выбери раздел и заучивай знаки с перемешиванием вопросов и ответов</p>
+    </header>
+
+    <main id="menu-screen" class="card">
+      <h2>Выберите раздел для тренировки</h2>
+      <div id="categories-grid" class="categories-grid"></div>
+    </main>
+
+    <section id="quiz-screen" class="card hidden">
+      <div class="quiz-top">
+        <button id="back-btn" class="btn-ghost">← К разделам</button>
+        <span id="category-badge" class="badge">Раздел</span>
+        <span id="progress-text" class="progress-text">1 / 10</span>
+      </div>
+
+      <div class="progress-bar">
+        <div id="progress-fill" class="progress-fill"></div>
+      </div>
+
+      <div class="sign-box">
+        <img id="sign-image" src="" alt="Дорожный знак">
+        <div id="sign-fallback" class="sign-fallback hidden"></div>
+      </div>
+
+      <h3 class="question-title">Что это за знак?</h3>
+
+      <div id="options-container" class="options-list"></div>
+
+      <div class="quiz-footer">
+        <div id="feedback-text" class="feedback-text"></div>
+        <button id="next-btn" class="btn-primary hidden">Следующий вопрос →</button>
+      </div>
+    </section>
+
+    <section id="result-screen" class="card hidden">
+      <h2>Результат тренировки</h2>
+      <div class="score-circle">
+        <span id="score-percent">0%</span>
+      </div>
+      <p id="score-details" class="score-details">Правильно: 0 из 0</p>
+
+      <div class="result-actions">
+        <button id="retry-mistakes-btn" class="btn-warning hidden">Повторить только ошибки (0)</button>
+        <button id="restart-btn" class="btn-primary">Пройти раздел заново</button>
+        <button id="to-menu-btn" class="btn-ghost">Выбрать другой раздел</button>
+      </div>
+    </section>
+  </div>
+
+  <script src="script.js"></script>
+  <script>
+    let currentCategory = null;
+    let questions = [];
+    let currentIndex = 0;
+    let score = 0;
+    let mistakes = [];
+    let answered = false;
+
+    const menuScreen = document.getElementById("menu-screen");
+    const quizScreen = document.getElementById("quiz-screen");
+    const resultScreen = document.getElementById("result-screen");
+    const categoriesGrid = document.getElementById("categories-grid");
+    const categoryBadge = document.getElementById("category-badge");
+    const progressText = document.getElementById("progress-text");
+    const progressFill = document.getElementById("progress-fill");
+    const signImage = document.getElementById("sign-image");
+    const signFallback = document.getElementById("sign-fallback");
+    const optionsContainer = document.getElementById("options-container");
+    const feedbackText = document.getElementById("feedback-text");
+    const nextBtn = document.getElementById("next-btn");
+
+    function shuffle(arr) {
+      const copy = [...arr];
+      for (let i = copy.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [copy[i], copy[j]] = [copy[j], copy[i]];
+      }
+      return copy;
+    }
+
+    function renderMenu() {
+      categoriesGrid.innerHTML = "";
+      CATEGORIES.forEach(cat => {
+        const count = cat.id === 9 ? SIGNS_DB.length : SIGNS_DB.filter(s => s.cat === cat.id).length;
+        const btn = document.createElement("button");
+        btn.className = "category-card" + (cat.id === 9 ? " category-all" : "");
+        btn.innerHTML = `<div class="cat-title">${cat.title}</div><div class="cat-meta">${cat.range} • ${count} знаков</div>`;
+        btn.onclick = () => startQuiz(cat);
+        categoriesGrid.appendChild(btn);
+      });
+    }
+
+    function startQuiz(cat, customList = null) {
+      currentCategory = cat;
+      const pool = customList || (cat.id === 9 ? SIGNS_DB : SIGNS_DB.filter(s => s.cat === cat.id));
+      questions = shuffle(pool);
+      currentIndex = 0;
+      score = 0;
+      mistakes = [];
+      menuScreen.classList.add("hidden");
+      resultScreen.classList.add("hidden");
+      quizScreen.classList.remove("hidden");
+      categoryBadge.textContent = cat.title;
+      showQuestion();
+    }
+    function loadSignImage(code) {
+      signImage.classList.remove("hidden");
+      signFallback.classList.add("hidden");
+
+      signImage.onerror = function () {
+        if (!this.dataset.triedPng) {
+          this.dataset.triedPng = "true";
+          this.src = `signs/${code}.png`;
+        } else {
+          this.classList.add("hidden");
+          signFallback.classList.remove("hidden");
+          signFallback.textContent = `Знак № ${code}`;
+        }
+      };
+
+      delete signImage.dataset.triedPng;
+      signImage.src = `signs/${code}.svg`;
+    }
+
+    function showQuestion() {
+      answered = false;
+      nextBtn.classList.add("hidden");
+      feedbackText.textContent = "";
+      feedbackText.className = "feedback-text";
+
+      const currentSign = questions[currentIndex];
+      progressText.textContent = `${currentIndex + 1} / ${questions.length}`;
+      progressFill.style.width = `${((currentIndex + 1) / questions.length) * 100}%`;
+
+      loadSignImage(currentSign.code);
+
+      let sameCatOthers = SIGNS_DB.filter(s => s.cat === currentSign.cat && s.code !== currentSign.code);
+      let distractors = shuffle(sameCatOthers).slice(0, 4);
+
+      if (distractors.length < 4) {
+        const extra = shuffle(
+          SIGNS_DB.filter(s => s.code !== currentSign.code && !distractors.some(d => d.code === s.code))
+        ).slice(0, 4 - distractors.length);
+        distractors = distractors.concat(extra);
+      }
+
+      const options = shuffle([
+        { text: currentSign.name, isCorrect: true },
+        ...distractors.map(d => ({ text: d.name, isCorrect: false }))
+      ]);
+
+      optionsContainer.innerHTML = "";
+      options.forEach((opt, idx) => {
+        const btn = document.createElement("button");
+        btn.className = "option-btn";
+        btn.innerHTML = `<span class="opt-num">${idx + 1}</span><span>${opt.text}</span>`;
+        btn.onclick = () => selectAnswer(btn, opt.isCorrect, currentSign);
+        optionsContainer.appendChild(btn);
+      });
+    }
+
+    function selectAnswer(clickedBtn, isCorrect, currentSign) {
+      if (answered) return;
+      answered = true;
+
+      const allButtons = optionsContainer.querySelectorAll(".option-btn");
+      allButtons.forEach(btn => {
+        btn.disabled = true;
+        const text = btn.querySelector("span:last-child").textContent;
+        if (text === currentSign.name) {
+          btn.classList.add("correct");
+        }
+      });
+
+      if (isCorrect) {
+        score++;
+        feedbackText.textContent = `Верно! Это знак ${currentSign.code}.`;
+        feedbackText.classList.add("ok");
+      } else {
+        clickedBtn.classList.add("wrong");
+        mistakes.push(currentSign);
+        feedbackText.textContent = `Неверно. Правильно (${currentSign.code}): ${currentSign.name}`;
+        feedbackText.classList.add("err");
+      }
+
+      nextBtn.textContent = currentIndex + 1 < questions.length
+        ? "Следующий вопрос →"
+        : "Показать результат";
+      nextBtn.classList.remove("hidden");
+    }
+
+    nextBtn.onclick = () => {
+      currentIndex++;
+      if (currentIndex < questions.length) {
+        showQuestion();
+      } else {
+        showResults();
+      }
+    };
+
+    function showResults() {
+      quizScreen.classList.add("hidden");
+      resultScreen.classList.remove("hidden");
+
+      const percent = Math.round((score / questions.length) * 100);
+      document.getElementById("score-percent").textContent = `${percent}%`;
+      document.getElementById("score-details").textContent =
+        `Правильных ответов: ${score} из ${questions.length}`;
+
+      const retryBtn = document.getElementById("retry-mistakes-btn");
+      if (mistakes.length > 0) {
+        retryBtn.classList.remove("hidden");
+        retryBtn.textContent = `Повторить только ошибки (${mistakes.length})`;
+      } else {
+        retryBtn.classList.add("hidden");
+      }
+    }
+
+    document.getElementById("back-btn").onclick = () => {
+      quizScreen.classList.add("hidden");
+      menuScreen.classList.remove("hidden");
+    };
+
+    document.getElementById("to-menu-btn").onclick = () => {
+      resultScreen.classList.add("hidden");
+      menuScreen.classList.remove("hidden");
+    };
+
+    document.getElementById("restart-btn").onclick = () => {
+      startQuiz(currentCategory);
+    };
+
+    document.getElementById("retry-mistakes-btn").onclick = () => {
+      startQuiz(currentCategory, mistakes);
+    };
+
+    renderMenu();
+  </script>
+</body>
+</html>
